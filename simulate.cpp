@@ -4,6 +4,8 @@
 #include <list>
 #include <iomanip>
 #include <cstdio> 
+#include <vector>
+#include <cmath>
 
 using namespace std;
 
@@ -12,6 +14,27 @@ typedef struct
 	bool rw;	// Read=0, write=1
 	unsigned int loc;	// 4byte memory location
 } memop;
+
+typedef struct
+{
+	int tag;
+	int set;
+	bool valid;
+	bool dirty;
+} Block;
+
+typedef struct
+{
+	int hit;
+	int miss;
+	int m2c;
+	int c2m;
+	int hitcom;
+	int block_num;
+	int ways;
+	int sets;
+	vector<Block> blocks;
+} Cache;
 
 int cs [4] = {1024, 4096, 65536, 131072};
 int bs [4] = {8, 16, 32, 128};
@@ -60,7 +83,6 @@ int main(int argc, char **argv)
 {
 	// List containing memory operation structs
 	list<memop> trace;
-	list<memop>::iterator it = trace.begin();
 
 	// Prefix of filename is the first argument
 	string filename = argv[1];
@@ -73,6 +95,7 @@ int main(int argc, char **argv)
 	ofstream outFile(filename+".result");
 	outFile.close();
 
+	// Test printing out the trace
 	// while (it != trace.end())
 	// {
 	// 	cout << it->rw << "\t" << hex << it->loc << endl;
@@ -87,12 +110,123 @@ int main(int argc, char **argv)
 			{
 				for(int l = 0; l < 2; l++)
 				{
-					// Test file output
-					//printResult(filename, i, j, k, l, i, j, k, l, 7);
+					Cache *cache = new Cache;
+					Block *block = new Block;
+
+					cache->hit = 0;
+					cache->miss = 0;
+					cache->m2c = 0;
+					cache->c2m = 0;
+					cache->block_num = cs[i]/bs[j];
+					cache->ways = (mt[k] == "DM") ? 1 : (mt[k] == "2W") ? 2 : (mt[k] == "4W") ? 4 : (mt[k] == "FA") ? cache->block_num : 0;
+					cache->hitcom = cache->ways;
+					cache->sets = (cache->block_num)/(cache->ways);
+
+					for(int m = 0; m < cache->block_num; m++)
+					{
+						block->valid = 0;
+						block->dirty = 0;
+						block->tag = -1;
+						cache->blocks.push_back(*block);
+					}
+
+					int offset_index = log2(bs[j]);
+					int set_index = offset_index + log2(cache->sets);
+					int tag_index = 32;
+					
+
+					for(list<memop>::iterator it = trace.begin(); it != trace.end(); it++)
+					{
+						int newtag = (it->loc)>>(set_index);
+						int newset = ((it->loc)>>(offset_index))%(set_index);
+						bool eviction = false;
+
+						Block tempblock;
+
+						// Write to cache
+						if(it->rw)
+						{
+							for(int m = 0; m < cache->block_num; m++)
+							{
+								tempblock = cache->blocks[m];
+								if(tempblock.set == newset && tempblock.tag == newtag)
+								{
+									cache->hit += 1;
+									
+									block->dirty = true;
+
+									cache->blocks.erase(cache->blocks.begin()+m);
+									cache->blocks.push_back(tempblock);
+								}
+								else
+								{
+									block->set = newset;
+									block->tag = newtag;
+									block->valid = true;
+									
+									
+									// Cache is full so erase the oldest
+									if(m == (cache->block_num - 1));
+									{
+										cache->blocks.erase(cache->blocks.begin());
+										eviction = true;
+									}
+
+									cache->blocks.push_back(*block);
+									
+									cache->miss += 1;
+								}
+
+
+								if (l == 0 && eviction)
+								{
+									cache->c2m += 1;
+								}
+								else if(l == 1)
+								{
+									cache->c2m += 1;
+								}
+							}
+						}
+						// Read from cache
+						else
+						{
+							for(int m = 0; m < cache->block_num; m++)
+							{
+								tempblock = cache->blocks[m];
+								if(tempblock.set == newset && tempblock.tag == newtag)
+								{
+									cache->hit += 1;
+
+									cache->blocks.erase(cache->blocks.begin()+m);
+									cache->blocks.push_back(tempblock);
+								}
+								else
+								{
+									block->set = newset;
+									block->tag = newtag;
+									block->valid = true;
+									
+									// Cache is full so erase the oldest
+									if(m == (cache->block_num - 1));
+									{
+										cache->blocks.erase(cache->blocks.begin());
+									}
+
+									cache->blocks.push_back(*block);
+
+									cache->miss += 1;
+									cache->m2c += 1;
+								}
+							}
+						}
+					}
+
+					// Test result output
+					printResult(filename, i, j, k, l, cache->hit, cache->miss, cache->m2c, cache->c2m, cache->hitcom);
 				}
 			}
 		}	
 	}
-
 	return 0;
 }
