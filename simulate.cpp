@@ -1,3 +1,12 @@
+/////////////////////////////////////////////
+// Danny Dutton
+// 12/03/15
+// ECE2500
+// 
+// Project 3: Cache Simulator
+//
+/////////////////////////////////////////////
+
 #include <string>
 #include <fstream>
 #include <iostream>
@@ -95,13 +104,6 @@ int main(int argc, char **argv)
 	ofstream outFile(filename+".result");
 	outFile.close();
 
-	// Test printing out the trace
-	// while (it != trace.end())
-	// {
-	// 	cout << it->rw << "\t" << hex << it->loc << endl;
-	// 	it++;
-	// }
-
 	for(int i = 0; i < 4; i++)
 	{
 		for(int j = 0; j < 4; j++)
@@ -110,6 +112,7 @@ int main(int argc, char **argv)
 			{
 				for(int l = 0; l < 2; l++)
 				{
+					// Create a new cache with all the correct attributes
 					Cache *cache = new Cache;
 					Block *block = new Block;
 
@@ -122,6 +125,7 @@ int main(int argc, char **argv)
 					cache->hitcom = cache->ways;
 					cache->sets = (cache->block_num)/(cache->ways);
 
+					// Clear out the vector of blocks in the cache
 					for(int m = 0; m < cache->block_num; m++)
 					{
 						block->valid = 0;
@@ -130,11 +134,13 @@ int main(int argc, char **argv)
 						cache->blocks.push_back(*block);
 					}
 
+					// Determine indices
 					int offset_index = log2(bs[j]);
 					int set_index = offset_index + log2(cache->sets);
 					int tag_index = 32;
 					
 
+					// Go through each item in trace
 					for(list<memop>::iterator it = trace.begin(); it != trace.end(); it++)
 					{
 						int newtag = (it->loc)>>(set_index);
@@ -146,9 +152,13 @@ int main(int argc, char **argv)
 						// Write to cache
 						if(it->rw)
 						{
-							for(int m = 0; m < cache->block_num; m++)
+							bool found = false;
+							int m;
+							for(m = 0; m < cache->block_num; m++)
 							{
 								tempblock = cache->blocks[m];
+								
+								// Hit
 								if(tempblock.set == newset && tempblock.tag == newtag)
 								{
 									cache->hit += 1;
@@ -157,73 +167,100 @@ int main(int argc, char **argv)
 
 									cache->blocks.erase(cache->blocks.begin()+m);
 									cache->blocks.push_back(tempblock);
+									found = true;
+									m = cache->block_num;
 								}
+								// No hit
 								else
 								{
-									block->set = newset;
-									block->tag = newtag;
-									block->valid = true;
-									
-									
-									// Cache is full so erase the oldest
-									if(m == (cache->block_num - 1));
-									{
-										cache->blocks.erase(cache->blocks.begin());
-										eviction = true;
-									}
-
-									cache->blocks.push_back(*block);
-									
-									cache->miss += 1;
-								}
-
-
-								if (l == 0 && eviction)
-								{
-									cache->c2m += 1;
-								}
-								else if(l == 1)
-								{
-									cache->c2m += 1;
+									found = false;
 								}
 							}
+
+							// Miss
+							if(found == false)
+							{
+								block->set = newset;
+								block->tag = newtag;
+								block->valid = true;
+								
+								
+								// Cache is full so erase the oldest
+								if(m == (cache->block_num - 1));
+								{
+									cache->blocks.erase(cache->blocks.begin());
+									eviction = true;
+								}
+								cache->blocks.push_back(*block);
+							
+								cache->miss += 1;
+								cache->m2c += 1;
+							}
+
+							// Write policy
+							if (l == 0 && eviction)
+							{
+								cache->c2m += 1;
+							}
+							if(l == 1)
+							{
+								cache->c2m += 1;
+							}
+
+							eviction  = false;
 						}
 						// Read from cache
 						else
 						{
-							for(int m = 0; m < cache->block_num; m++)
+							bool found = false;
+							int m;
+							for(m = 0; m < cache->block_num; m++)
 							{
 								tempblock = cache->blocks[m];
+								
+								// hit
 								if(tempblock.set == newset && tempblock.tag == newtag)
 								{
 									cache->hit += 1;
 
 									cache->blocks.erase(cache->blocks.begin()+m);
 									cache->blocks.push_back(tempblock);
+									m = cache->block_num;
+									found = true;
 								}
+								
+								// No hit
 								else
 								{
-									block->set = newset;
-									block->tag = newtag;
-									block->valid = true;
-									
-									// Cache is full so erase the oldest
-									if(m == (cache->block_num - 1));
-									{
-										cache->blocks.erase(cache->blocks.begin());
-									}
-
-									cache->blocks.push_back(*block);
-
-									cache->miss += 1;
-									cache->m2c += 1;
+									found =  false;
 								}
+							}
+
+							// Miss
+							if (found == false)
+							{
+								block->set = newset;
+								block->tag = newtag;
+								block->valid = true;
+									
+								// Cache is full so erase the oldest
+								if(m == (cache->block_num - 1));
+								{
+									cache->blocks.erase(cache->blocks.begin());
+								}
+
+								cache->blocks.push_back(*block);
+
+								cache->miss += 1;
+								cache->m2c += 1;
+
+								m = cache->block_num;
 							}
 						}
 					}
 
-					// Test result output
-					printResult(filename, i, j, k, l, cache->hit, cache->miss, cache->m2c, cache->c2m, cache->hitcom);
+					// result output
+					printResult(filename, i, j, k, l, cache->hit, cache->miss, cache->m2c * bs[j], cache->c2m * bs[j], cache->hitcom);
 				}
 			}
 		}	
